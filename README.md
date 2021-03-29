@@ -1,12 +1,12 @@
 # Better Todo #
 ##### A simple todo list made with python.
 
-##Installation 
+## Installation 
 1. Download from [here](https://github.com/brtcrt/Better-Todo/tree/releases).
 2. Unzip the folder.
 3. Run Better-Todo.exe.
 
-###General Info
+### General Info
 ```
 A simple way to keep note of things while working/taking classes. 
 Add anything you think you might need to remember to this todo list.
