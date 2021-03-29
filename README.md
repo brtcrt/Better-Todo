@@ -2,7 +2,7 @@
 ##### A simple todo list made with python.
 
 ## Installation 
-1. Download from [here](https://github.com/brtcrt/Better-Todo/tree/releases).
+1. Download from [here](https://github.com/brtcrt/Better-Todo/releases).
 2. Unzip the folder.
 3. Run Better-Todo.exe.
 
