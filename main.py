@@ -4,7 +4,11 @@ import json  # Standard json library. Using this for data storage. Unstable but 
 from tkinter import ttk  # For quick access to parts like the Button.
 from tkcalendar import Calendar  # Used for the date picking.
 from datetime import date, datetime  # Used for setting starting date.
-import threading, time  # Threading for checking time.
+import threading  # Threading for checking time.
+import time
+import os, win32com.client, getpass, sys, shutil
+
+exited = False  # Used to check if the user has exited the program
 
 with open('tasks.json') as json_file:
     try:
@@ -17,28 +21,47 @@ try:
     task["tasks"] = tasks_list  # Current data is set to saved data on start up. Basically how the save-load system works.
 except KeyError:
     print("Some random key error from start up or the json file was changed.")  # Problems with using .json as a db.
-addedTask = ""  # To put all the info received in to order.
+task_object = {  # Keeps all the data in a neat dictionary.
+    "task": "",
+    "date": "",
+    "time": ""
+}
+
+
+def On_StartUp():
+    curr_wd = os.getcwd()
+    user = getpass.getuser()
+    start_up = r"C:\Users\{}\Appdata\Roaming\Microsoft\Windows\Start Menu\Programs\StartUp".format(user)
+    try:
+        target = curr_wd + r"\Better-Todo.lnk"
+        dest = start_up + r"\Better-Todo.lnk"
+        shutil.copyfile(target, dest)
+    except ValueError:
+        return
+
+
+On_StartUp()
 
 
 def PickDate():  # To pick a date for the task.
     def print_sel():
-        global addedTask, tasks_list, task
+        global tasks_list, task, task_object
         AddTask()  # Adding the task from the input box. See the function for more info.
-        this_time = GetTime()  # Get time. See the function for more info.
-        tasks = "tasks"  # This is just stupid but it fixed some error so I had to do it.
-        if addedTask == "":  # Solves a problem where the program would die if the user enters an empty string. Idk who'd do that, but yeah. Just in case.
+        if task_object["task"] == "":  # Solves a problem where the program would die if the user enters an empty string. Idk who'd do that, but yeah. Just in case.
             messagebox.showinfo("Something bad happened :(", "Please enter your task first!")  # Also to keep everything in order. (Task first, date second)
         else:
             this_date = cal.selection_get()  # Gets the date.
-            task[tasks].append(str(addedTask) + " --- Task Date: " + str(this_date) + " --- " + str(this_time))  # Combines the task & date into a single string so it is easier to display.
+            task_object["date"] = str(this_date)
+            task["tasks"].append(task_object)  # Combines the task & date into a single string so it is easier to display.
+            task_object = {}
             top.destroy()  # Auto close.
             SaveToJson()  # Saves to the json file. Also updates the list displayed. See the function for more info.
 
     top = tk.Toplevel(root)  # Init the window.
     t_width = 350
     t_height = 350
-    t_left = int(top.winfo_screenwidth() / 2 - t_width / 2)
-    t_right = int(top.winfo_screenheight() / 2 - t_height / 2)
+    t_left = int(top.winfo_screenwidth() - t_width - 60)
+    t_right = int(top.winfo_screenheight() - t_height - 100)
     top.geometry("{}x{}+{}+{}".format(t_width, t_height, t_left, t_right))  # Appear at the center.
     cal = Calendar(top, font="Arial 14", selectmode='day', cursor="hand1", year=date.today().year, month=date.today().month, day=date.today().day)  # The date-picker system.
     cal.pack(fill="both", expand=True)  # Packing it.
@@ -51,103 +74,86 @@ def SaveToJson():  # Saving to the local json database.
     with open('tasks.json', 'w') as tasks_dumped:
         json.dump(task, tasks_dumped, indent=3, sort_keys=True)  # This somehow fucking works.
     RefreshList()  # Refresh the list every time a change happens.
+    # colorizeTasks()
 
 
 def AddTask():  # Get the tasks name from the user.
-    global task, addedTask, task_entry, t_var
+    global task, task_entry, t_var
     if str(task_entry.get()) == "":  # If the input is empty string
         return  # Do nothing
     else:
-        addedTask = (str(task_entry.get()))  # This should have been the first function that I wrote but it wasn't so it's gonna stay here.
+        task_object["task"] = (str(task_entry.get()))  # This should have been the first function that I wrote but it wasn't so it's gonna stay here.
     t_var.set("")  # Reset the text box.
 
 
-def GetList():  # Needed this because I didn't want to keep writing the same stuff.
-    i, last_list = 0, ""
-    global task
-    for t_ in task["tasks"]:  # Putting all the tasks in the list/dictionary in to a neat little string.
-        i += 1  # Counter. I know there is a simpler way of doing this but I can't be bothered.
-        last_list = last_list + "{}) Task name: ".format(str(i)) + t_ + "\n"
-    return last_list
-
-
 def RefreshList():  # Showing the list.
-    global strvar
-    new_info = GetList()  # Get the current list.
-    strvar.set(new_info)  # Display it on to the screen.
+    global tree, task
+    some_count = 0  # To keep track of the id.
+    tree.delete(*tree.get_children())  # Deletes everything.
+    due_t, past_t = CheckDates()  # Gets the due dates and the past dates.
+    colorizeTasks()  # "Sorts" them by color. Light blue is due today, and pink is missed.
+    for t_ in task["tasks"]:  # Puts everything back.
+        if not due_t and not past_t:  # Some checks to see if there are any due and past tasks.
+            tree.insert(parent="", index="end", iid=some_count, text="", values=(t_["task"], t_["time"], t_["date"]))
+        elif past_t and due_t:
+            if [t_["date"] == member["date"] for member in due_t][0]:
+                print("got one due1 {}".format(t_["task"]))
+                tree.insert(parent="", index="end", iid=some_count, text="", values=(t_["task"], t_["time"], t_["date"]), tags=("due",))
+            elif [t_["date"] == member["date"] for member in past_t][0]:
+                print("got one past1 {}".format(t_["task"]))
+                tree.insert(parent="", index="end", iid=some_count, text="", values=(t_["task"], t_["time"], t_["date"]), tags=("missed",))
+            else:
+                tree.insert(parent="", index="end", iid=some_count, text="", values=(t_["task"], t_["time"], t_["date"]))
+        elif due_t and not past_t:
+            if [t_["date"] == member["date"] for member in due_t][0]:
+                print("got one due2 {}".format(t_["task"]))
+                tree.insert(parent="", index="end", iid=some_count, text="", values=(t_["task"], t_["time"], t_["date"]), tags=("due",))
+            else:
+                tree.insert(parent="", index="end", iid=some_count, text="", values=(t_["task"], t_["time"], t_["date"]))
+        elif past_t and not due_t:
+            if [t_["date"] == member["date"] for member in past_t]:
+                print("got one past2 {}".format(t_["task"]))
+                tree.insert(parent="", index="end", iid=some_count, text="", values=(t_["task"], t_["time"], t_["date"]), tags=("missed",))
+        some_count += 1
+
+
+def colorizeTasks():  # Colorize the tasks in the treeview
+    tree.tag_configure('missed', background='pink')  # Pink. Red made the text unreadable.
+    tree.tag_configure('due', background='lightblue')  # Light blue. Blue made the text unreadable.
 
 
 def DeleteTask():  # Delete Tasks.
-    global task, delete_entry, d_var
-    delete_return = str(delete_entry.get())  # Get the input.
-    delete_return.replace(" ", "")  # Replace any spaces with "" so that it's easier to turn into a list.
-    delete_return = delete_return.split(",")  # Split with , to make it into a list.
-    if delete_return[0] == "all":  # If the first argument is all, then delete every task.
-        task["tasks"] = []
-        SaveToJson()  # Save to json and update the list.
-        d_var.set("")  # Reset the input box.
-        return
-    else:  # If some list indices were supplied:
-        delete_return.sort(reverse=True)  # idk why I did this. I don't think it is actually necessary.
-        try:
-            if not len(set(delete_return)) == len(delete_return): return messagebox.showinfo("Something bad happened :(", "You entered the same number twice!")  # Some necessary checks.
-            if not len(task["tasks"]) > len(delete_return): return messagebox.showinfo("Something bad happened :(", "You entered too many arguments!")  # Some necessary checks.
-            remove_list = []
-            for index in delete_return:  # Get the name of the removed item and push it into a list.
-                delete_index = int(index)
-                to_remove = task["tasks"][delete_index - 1]
-                remove_list.append(to_remove)
-            for member in remove_list:  # Remove the tasks.
-                task["tasks"].remove(member)
-            SaveToJson()  # Save to json and update the list.
-            d_var.set("")  # Reset the input box.
-            return
-        except ValueError:
-            d_var.set("")  # Reset the input box.
-            return messagebox.showinfo("Something bad happened :(", "Received bad characters!")  # If it isn't "all" or a number it would give an error so I'm just excepting that.
+    global task, tree
+    selected_item = tree.selection()[0]  # Gets which one is selected.
+    tree.delete(selected_item)  # Deletes from treeview
+    del task["tasks"][int(selected_item)]  # Deletes from task dictionary.
+    SaveToJson()  # Saves to json.
 
 
-def CheckDates():  # I spent so much time on this useless thing. There might be a faster and shorter way of doing it but I wrote it like this and can't be bothered to change it. But hey, it at least works.
-    global task  # And no, I'm not actually going to talk about this function in detail. Even I have trouble understanding what goes on.
+def Clear():  # Deletes everything. Same logic with the DeleteTask function.
+    global task, tree
+    tree.delete(*tree.get_children())
+    task["tasks"] = []
+    SaveToJson()
+
+
+def CheckDates():  # Checks if there are any due or past tasks. Returns them if there are any.
+    global task
     present = date.today()
     count = 0
-    all_tasks = GetList()
-    all_tasks = all_tasks.replace("\n", " --- ")
-    all_tasks = all_tasks.split(" --- ")
-    task_index = []
-    past_index = []
-    all_dates = []
-    past_dates = []
-    past_tasks = []
-    due_dates = []
-    due_tasks = []
-    for i in range(1, len(all_tasks), 3):
+    past_ = []
+    due_ = []
+    for i in task["tasks"]:
         try:
-            all_dates.append(all_tasks[i])
-            print(all_tasks[i])
-        except IndexError:
+            current = i["date"].split("-")
+            current.insert(0, str(count + 1))
+            if date(int(current[1]), int(current[2]), int(current[3])) < present:
+                past_.append(i)
+            if date(int(current[1]), int(current[2]), int(current[3])) == present:
+                due_.append(i)
+        except IndexError:  # Just in case.
             print("Index Error")
-    all_dates = "".join(all_dates).replace("Task Date: ", " ").split(" ")
-    del all_dates[0]
-    for dates in all_dates:
-        current = dates.split("-")
-        current.insert(0, str(count + 1))
-        if date(int(current[1]), int(current[2]), int(current[3])) < present:
-            past_dates.append(" ".join([str(elem) for elem in current]))
-        if date(int(current[1]), int(current[2]), int(current[3])) == present:
-            due_dates.append(" ".join([str(elem) for elem in current]))
-        count += 3
-    for elem in due_dates:
-        cur = elem.split(" ")
-        task_index.append(cur[0])
-    for index in task_index:
-        due_tasks.append(all_tasks[int(index) - 1])
-    for elem in past_dates:
-        cur = elem.split(" ")
-        past_index.append(cur[0])
-    for index in past_index:
-        past_tasks.append(all_tasks[int(index) - 1])
-    return due_tasks, past_tasks
+    return due_, past_
 
 
 def ShowAtStart():
@@ -156,39 +162,38 @@ def ShowAtStart():
     if not past == []:
         total += "Tasks which you have missed: \n"  # Merge them together.
         for member in past:
-            total += "{}\n".format(member)
+            total += "{}\n".format(member["task"])
     if not due == []:
         total += "\n\nTasks for today: \n"
         for member in due:
-            total += "{}\n".format(member)
+            total += "{}\n".format(member["task"])
     if total == "":  # If there isn't anything worth mentioning, then don't show the message box.
         return
     else:
         return messagebox.showinfo("Attention", total)
 
 
-def GetTime():
-    global minute_var, hour_var
-    return hour_var.get() + ":" + minute_var.get()
+def raiseBreak(): # When the program is closed, everything will close with it.
+    global root, exited
+    root.destroy()
+    exited = True
+    sys.exit()
 
 
 def CheckTime():
-    global minutes, task
+    global minutes, task, root, exited
     time_up = []
+
     while True:
+        print("Checking")
         if str(datetime.now().minute) in minutes:
-            current_items = GetList().split("\n")
-            del current_items[len(current_items) - 1]
-            for item in current_items:
-                new_item = item.split(" --- ")
-                print(new_item)
-                print("Task Date: {}".format(str(date.today())))
-                if new_item[1] != "Task Date: {}".format(str(date.today())):
+            for _task in task["tasks"]:
+                if _task["date"] != "{}".format(str(date.today())):
                     return
-                date_item = new_item[2].split(":")
-                print(date_item)
+                date_item = _task["time"]
+                date_item = date_item.split(":")
                 if date_item[0] == str(datetime.now().hour) and date_item[1] == str(datetime.now().minute):
-                    time_up.append(new_item[0])
+                    time_up.append(_task["task"])
             if time_up == []:
                 time.sleep(60)
                 pass
@@ -197,14 +202,31 @@ def CheckTime():
                 messagebox.showinfo("Time is up!", latests_alarms)
                 time.sleep(60)
                 return "Done!"
+
+        root.protocol("WM_DELETE_WINDOW", raiseBreak)
+        if exited:
+            break
         time.sleep(60)
 
 
 root = tk.Tk()  # The core of the tkinter interface system.
 s = ttk.Style(root)  # Some styling.
-s.theme_use('clam')  # Some more styling.
+s.theme_use('winnative')  # Some more styling.
+tree = ttk.Treeview(root)  # A lot of treeview stuff. Styling etc...
+style = ttk.Style(tree)
+style.configure("Treeview", background="silver", foreground="black", rowheight=20, fieldbackground="silver")
+style.map("Treeview", background=[("selected", "green")])
+tree["column"] = ("Task", "Time", "Date")
+tree.column('#0', width=0, stretch=tk.NO)
+tree.column("Task", anchor=tk.CENTER, width=80)
+tree.column("Time", anchor=tk.CENTER, width=80)
+tree.column("Date", anchor=tk.CENTER, width=80)
+tree.heading('#0', text="", anchor=tk.CENTER)
+tree.heading("Task", anchor=tk.CENTER, text="Task")
+tree.heading("Time", anchor=tk.CENTER, text="Time")
+tree.heading("Date", anchor=tk.CENTER, text="Date")
+tree.pack(padx=10, pady=10, fill="both", expand=1)
 t_var = tk.StringVar()  # String variables to reset it back to "".
-d_var = tk.StringVar()  # ^^^^^^^^
 task_entry = ttk.Entry(root, textvariable=t_var)  # Getting the input from the user. This is the thing which adds the little input box.
 task_entry.pack(padx=10, pady=10, fill="both", expand=1)  # Packing it separately because it wouldn't stop giving errors.
 hours = ["01", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "00"]
@@ -213,29 +235,25 @@ hour_var.set("12")
 minutes = ["00", "00", "10", "15", "20", "30", "40", "45", "50"]
 minute_var = tk.StringVar()
 minute_var.set("00")
-hour_label = ttk.Label(root, text="Hour: ").pack(padx=10, pady=10)
 hour_select = ttk.OptionMenu(root, hour_var, *hours)
-hour_select.pack(padx=10, pady=10)
-minute_label = ttk.Label(root, text="Minute: ").pack(padx=10, pady=10)
+hour_select.pack(padx=10, pady=10, side=tk.LEFT)
+minute_label = ttk.Label(root, text="<---Hour // Minute--> ").pack(pady=10, padx=10, side=tk.LEFT)
 minute_select = ttk.OptionMenu(root, minute_var, *minutes)
-minute_select.pack(padx=10, pady=10)
-ttk.Button(root, text="Set task", command=PickDate).pack(padx=10, pady=10)  # Button for setting task.
-delete_entry = ttk.Entry(root, textvariable=d_var)  # Delete input box.
-delete_entry.pack(padx=10, pady=10, fill="both")  # Pack.
+minute_select.pack(padx=10, pady=10, side=tk.LEFT)
+ttk.Button(root, text="Set task", command=PickDate).pack(padx=10, pady=10)  # Button for setting task..
 ttk.Button(root, text="Delete", command=DeleteTask).pack(padx=10, pady=10)  # Delete button that calls the delete function.
+ttk.Button(root, text="Clear", command=Clear).pack(padx=10, pady=10)  # Delete button that calls the delete function.
 strvar = tk.StringVar()  # Actual list part. The variable for the text.
-info = GetList()  # Get the list.
-strvar.set(info)  # Put the info into the variable.
-label = ttk.Label(root, textvariable=strvar)  # Create the label with the variable.
-label.pack(padx=10, pady=10, fill="both")  # Pack.
 w_width = 550  # Screen stuff...
 w_height = 550  # Screen stuff...
-s_left = int(root.winfo_screenwidth() / 2 - w_width / 2)  # Screen stuff...
-s_right = int(root.winfo_screenheight() / 2 - w_height / 2)  # Screen stuff...
+s_left = int(root.winfo_screenwidth() - w_width - 10)  # Screen stuff...
+s_right = int(root.winfo_screenheight() - w_height - 60)  # Screen stuff...
 root.geometry("{}x{}+{}+{}".format(w_width, w_height, s_left, s_right))  # Center the window and set the size.
 root.title("Todo List")  # Title
 root.iconbitmap("icon.ico")  # Icon
+RefreshList()
 ShowAtStart()  # Call this function at start-up to see if there is anything relevant.
 thread = threading.Thread(target=CheckTime)
 thread.start()
+root.protocol("WM_DELETE_WINDOW", raiseBreak)
 root.mainloop()  # Finally initialize the program.
