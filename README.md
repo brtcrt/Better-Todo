@@ -12,7 +12,7 @@ A simple way to keep note of things while working/taking classes.
 Add anything you think you might need to remember to this todo list.
 ``` 
 
-![Image](photo.png)
+![Image](photo-new.png)
 
 ### Warning!
 ##### It would be preferable for the user to set this so it would start with windows. Here is how to do it for windows:
